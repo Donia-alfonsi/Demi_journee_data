@@ -1,8 +1,8 @@
 library(e1071)
 library(pROC)
 
-train <- read.csv2("../donnees_train.csv")
-test  <- read.csv2("../donnees_test.csv")
+train <- read.csv2("../farms_train.csv")
+test  <- read.csv("../farms_test.csv")
 #verif <- read.csv2("donnees_verification.csv")
 
 str(train)
@@ -18,7 +18,7 @@ for (col in colonnes_num) {
   }
 }
 
-train$DIFF <- as.factor(train$DIFF)
+train$DIFF <- as.factor(train$DIFF) 
 #verif$DIFF <- as.factor(verif$DIFF)
 
 pairs(train[, colonnes_num],
@@ -137,9 +137,7 @@ proba_radial <- calculer_proba(modele_radial, test)
 proba_poly   <- calculer_proba(modele_poly,   test)
 proba_cosine <- calculer_proba(modele_cosine, test_cos)
 
-# le calcul des ROC/AUC a besoin des vraies valeurs de DIFF (verif) ;
-# sur le test final "à l'aveugle" on n'a pas ça, donc on ne fait cette
-# partie que si verif existe, pour ne pas planter le reste du script.
+
 if (exists("verif")) {
   
   roc_linear <- roc(response = verif$DIFF, predictor = proba_linear)
@@ -159,13 +157,9 @@ if (exists("verif")) {
   plot(roc_cosine, main = paste("cosinus - AUC =", round(auc(roc_cosine), 3)))
   par(mfrow = c(1, 1))
   
-} else {
-  cat("Pas de 'verif' disponible : on saute le calcul des ROC/AUC et on\n",
-      "passe directement à l'export des prédictions finales.\n")
-}
+} 
 
-# à changer selon la courbe ROC qui vous semble la meilleure :
-# "linear", "radial", "polynomial" ou "cosinus"
+
 meilleur_noyau <- "radial"
 
 if (meilleur_noyau == "cosinus") {
