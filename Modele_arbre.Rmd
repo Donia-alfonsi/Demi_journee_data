@@ -1,0 +1,7 @@
+---
+title: "1/2 Journée Data Science"
+author: "Rayid"
+date: "2026-09-17"
+output: pdf_document
+---
+

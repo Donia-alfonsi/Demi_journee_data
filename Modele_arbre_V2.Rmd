@@ -1,0 +1,860 @@
+---
+title: "1/2 Journée Data Science"
+author: "Rayid"
+date: "2026-09-17"
+output: pdf_document
+---
+
+# 1. Chargement des packages
+
+```{r message=FALSE, warning=FALSE}
+library(ggplot2)
+library(rpart)
+library(rpart.plot)
+library(pROC)
+```
+
+# 2. Chargement des données
+
+Les données sont séparées en un jeu d'apprentissage de 299 observations
+et un jeu de validation de 101 observations.
+
+```{r}
+train <- read.csv(
+  "donnees_train.csv",
+  sep = ";",
+  dec = "."
+)
+
+test <- read.csv(
+  "donnees_test.csv",
+  sep = ";",
+  dec = "."
+)
+
+verification <- read.csv(
+  "donnees_verification.csv",
+  sep = ";",
+  dec = "."
+)
+
+dim(train)
+dim(test)
+dim(verification)
+
+names(train)
+```
+
+Les variables disponibles sont :
+
+- `DIFF` : variable à prédire ;
+- `TOF` : type d'exploitation agricole ;
+- `AGE` : âge ;
+- `R7`, `R8`, `R17`, `R22` et `R32` : différents ratios financiers.
+
+# 3. Préparation des données
+
+`DIFF` correspond à une classification binaire. La variable `TOF`
+représente un type d'exploitation et est donc considérée comme
+qualitative.
+
+```{r}
+train$DIFF <- as.factor(train$DIFF)
+train$TOF <- as.factor(train$TOF)
+
+test$TOF <- as.factor(test$TOF)
+
+str(train)
+```
+
+# 4. Exploration des données
+
+## 4.1 Vérification des valeurs manquantes
+
+On commence par vérifier la présence éventuelle de données manquantes.
+
+```{r}
+colSums(is.na(train))
+```
+
+## 4.2 Statistiques descriptives
+
+```{r}
+summary(train)
+```
+
+Ces statistiques permettent d'observer les ordres de grandeur et la
+dispersion des différentes variables quantitatives.
+
+## 4.3 Répartition de la variable DIFF
+
+On étudie tout d'abord la répartition de la variable que l'on souhaite
+prédire.
+
+```{r}
+table(train$DIFF)
+
+prop.table(
+  table(train$DIFF)
+)
+```
+
+```{r}
+ggplot(
+  train,
+  aes(x = DIFF)
+) +
+  geom_bar(
+    width = 0.6
+  ) +
+  geom_text(
+    stat = "count",
+    aes(label = after_stat(count)),
+    vjust = -0.5,
+    size = 4
+  ) +
+  labs(
+    title = "Répartition de la variable DIFF",
+    subtitle = "Données d'apprentissage",
+    x = "Classe DIFF",
+    y = "Nombre d'exploitations"
+  ) +
+  theme_minimal(
+    base_size = 12
+  ) +
+  theme(
+    plot.title = element_text(
+      face = "bold",
+      size = 15
+    ),
+    panel.grid.minor = element_blank()
+  )
+```
+
+Ce graphique permet notamment de vérifier si les deux classes sont
+équilibrées dans l'échantillon d'apprentissage.
+
+## 4.4 Répartition des types d'exploitation
+
+```{r}
+ggplot(
+  train,
+  aes(x = TOF)
+) +
+  geom_bar() +
+  geom_text(
+    stat = "count",
+    aes(label = after_stat(count)),
+    vjust = -0.4,
+    size = 3.5
+  ) +
+  labs(
+    title = "Répartition des types d'exploitation",
+    x = "Type d'exploitation (TOF)",
+    y = "Effectif"
+  ) +
+  theme_minimal(
+    base_size = 12
+  ) +
+  theme(
+    plot.title = element_text(
+      face = "bold",
+      size = 15
+    ),
+    panel.grid.minor = element_blank()
+  )
+```
+
+## 4.5 Type d'exploitation et DIFF
+
+On peut également comparer la répartition de `DIFF` selon le type
+d'exploitation.
+
+```{r}
+ggplot(
+  train,
+  aes(x = TOF, fill = DIFF)
+) +
+  geom_bar(
+    position = "fill"
+  ) +
+  labs(
+    title = "Répartition de DIFF selon le type d'exploitation",
+    x = "Type d'exploitation (TOF)",
+    y = "Proportion",
+    fill = "DIFF"
+  ) +
+  scale_y_continuous(
+    labels = scales::percent
+  ) +
+  theme_minimal(
+    base_size = 12
+  ) +
+  theme(
+    plot.title = element_text(
+      face = "bold",
+      size = 15
+    ),
+    panel.grid.minor = element_blank(),
+    legend.position = "top"
+  )
+```
+
+# 5. Exploration des variables quantitatives
+
+## 5.1 Distribution de l'âge
+
+```{r}
+ggplot(
+  train,
+  aes(x = AGE)
+) +
+  geom_histogram(
+    bins = 20,
+    boundary = 0
+  ) +
+  labs(
+    title = "Distribution de l'âge",
+    x = "Âge",
+    y = "Effectif"
+  ) +
+  theme_minimal(
+    base_size = 12
+  ) +
+  theme(
+    plot.title = element_text(
+      face = "bold",
+      size = 15
+    ),
+    panel.grid.minor = element_blank()
+  )
+```
+
+## 5.2 Comparaison de l'âge selon DIFF
+
+```{r}
+ggplot(
+  train,
+  aes(x = DIFF, y = AGE, fill = DIFF)
+) +
+  geom_boxplot(
+    width = 0.6,
+    show.legend = FALSE
+  ) +
+  labs(
+    title = "Distribution de l'âge selon DIFF",
+    x = "DIFF",
+    y = "Âge"
+  ) +
+  theme_minimal(
+    base_size = 12
+  ) +
+  theme(
+    plot.title = element_text(
+      face = "bold",
+      size = 15
+    ),
+    panel.grid.minor = element_blank()
+  )
+```
+
+## 5.3 Comparaison des ratios financiers selon DIFF
+
+Les boxplots suivants permettent de comparer la distribution des
+principaux ratios financiers entre les exploitations des classes 0 et 1.
+
+### Ratio R7
+
+```{r}
+ggplot(
+  train,
+  aes(x = DIFF, y = R7, fill = DIFF)
+) +
+  geom_boxplot(
+    show.legend = FALSE
+  ) +
+  labs(
+    title = "Distribution de R7 selon DIFF",
+    x = "DIFF",
+    y = "R7"
+  ) +
+  theme_minimal(
+    base_size = 12
+  ) +
+  theme(
+    plot.title = element_text(face = "bold"),
+    panel.grid.minor = element_blank()
+  )
+```
+
+### Ratio R8
+
+```{r}
+ggplot(
+  train,
+  aes(x = DIFF, y = R8, fill = DIFF)
+) +
+  geom_boxplot(
+    show.legend = FALSE
+  ) +
+  labs(
+    title = "Distribution de R8 selon DIFF",
+    x = "DIFF",
+    y = "R8"
+  ) +
+  theme_minimal(
+    base_size = 12
+  ) +
+  theme(
+    plot.title = element_text(face = "bold"),
+    panel.grid.minor = element_blank()
+  )
+```
+
+### Ratio R17
+
+```{r}
+ggplot(
+  train,
+  aes(x = DIFF, y = R17, fill = DIFF)
+) +
+  geom_boxplot(
+    show.legend = FALSE
+  ) +
+  labs(
+    title = "Distribution de R17 selon DIFF",
+    x = "DIFF",
+    y = "R17"
+  ) +
+  theme_minimal(
+    base_size = 12
+  ) +
+  theme(
+    plot.title = element_text(face = "bold"),
+    panel.grid.minor = element_blank()
+  )
+```
+
+### Ratio R22
+
+```{r}
+ggplot(
+  train,
+  aes(x = DIFF, y = R22, fill = DIFF)
+) +
+  geom_boxplot(
+    show.legend = FALSE
+  ) +
+  labs(
+    title = "Distribution de R22 selon DIFF",
+    x = "DIFF",
+    y = "R22"
+  ) +
+  theme_minimal(
+    base_size = 12
+  ) +
+  theme(
+    plot.title = element_text(face = "bold"),
+    panel.grid.minor = element_blank()
+  )
+```
+
+### Ratio R32
+
+```{r}
+ggplot(
+  train,
+  aes(x = DIFF, y = R32, fill = DIFF)
+) +
+  geom_boxplot(
+    show.legend = FALSE
+  ) +
+  labs(
+    title = "Distribution de R32 selon DIFF",
+    x = "DIFF",
+    y = "R32"
+  ) +
+  theme_minimal(
+    base_size = 12
+  ) +
+  theme(
+    plot.title = element_text(face = "bold"),
+    panel.grid.minor = element_blank()
+  )
+```
+
+Ces représentations permettent d'identifier visuellement les variables
+dont les distributions semblent différer entre les deux classes.
+
+# 6. Premier arbre CART
+
+On utilise maintenant un arbre de décision CART pour prédire la variable
+`DIFF`.
+
+```{r}
+arbre <- rpart(
+  DIFF ~ .,
+  data = train,
+  method = "class"
+)
+
+arbre
+```
+
+## Visualisation du premier arbre
+
+```{r fig.width=10, fig.height=7}
+rpart.plot(
+  arbre,
+  type = 2,
+  extra = 104,
+  fallen.leaves = TRUE,
+  roundint = FALSE,
+  box.palette = "Blues",
+  shadow.col = "gray",
+  main = "Premier arbre CART"
+)
+```
+
+# 7. Évaluation du premier arbre
+
+On prédit la probabilité d'appartenir à la classe `DIFF = 1` sur les
+101 observations du jeu de validation.
+
+```{r}
+proba_arbre <- predict(
+  arbre,
+  newdata = test,
+  type = "prob"
+)[, "1"]
+
+head(proba_arbre)
+```
+
+On calcule ensuite l'AUC.
+
+```{r}
+roc_arbre <- roc(
+  verification$DIFF,
+  proba_arbre,
+  quiet = TRUE
+)
+
+auc(roc_arbre)
+```
+
+# 8. Choix de la profondeur maximale
+
+Pour contrôler la complexité de l'arbre, différentes profondeurs
+maximales comprises entre 1 et 10 sont testées.
+
+```{r}
+profondeurs <- 1:10
+
+auc_profondeur <- numeric(
+  length(profondeurs)
+)
+
+for (i in seq_along(profondeurs)) {
+  
+  arbre_i <- rpart(
+    DIFF ~ .,
+    data = train,
+    method = "class",
+    control = rpart.control(
+      maxdepth = profondeurs[i],
+      cp = 0
+    )
+  )
+  
+  proba_i <- predict(
+    arbre_i,
+    newdata = test,
+    type = "prob"
+  )[, "1"]
+  
+  roc_i <- roc(
+    verification$DIFF,
+    proba_i,
+    quiet = TRUE
+  )
+  
+  auc_profondeur[i] <- as.numeric(
+    auc(roc_i)
+  )
+}
+
+resultats <- data.frame(
+  profondeur = profondeurs,
+  AUC = auc_profondeur
+)
+
+resultats
+```
+
+## AUC selon la profondeur
+
+```{r fig.width=8, fig.height=5}
+ggplot(
+  resultats,
+  aes(x = profondeur, y = AUC)
+) +
+  geom_line(
+    linewidth = 1
+  ) +
+  geom_point(
+    size = 3
+  ) +
+  geom_vline(
+    xintercept = 5,
+    linetype = "dashed"
+  ) +
+  geom_point(
+    data = subset(
+      resultats,
+      profondeur == 5
+    ),
+    size = 5
+  ) +
+  annotate(
+    "text",
+    x = 5.3,
+    y = 0.815,
+    label = "Profondeur 5\nAUC = 0,8063",
+    hjust = 0,
+    size = 4
+  ) +
+  scale_x_continuous(
+    breaks = 1:10
+  ) +
+  coord_cartesian(
+    ylim = c(0.70, 0.83)
+  ) +
+  labs(
+    title = "Performance de l'arbre selon sa profondeur",
+    subtitle = "La profondeur 5 est la première atteignant l'AUC maximale",
+    x = "Profondeur maximale",
+    y = "AUC"
+  ) +
+  theme_minimal(
+    base_size = 12
+  ) +
+  theme(
+    plot.title = element_text(
+      face = "bold",
+      size = 15
+    ),
+    plot.subtitle = element_text(
+      size = 11
+    ),
+    panel.grid.minor = element_blank()
+  )
+```
+
+L'AUC augmente jusqu'à une profondeur maximale de 5. Elle atteint
+environ **0,8063** et n'augmente plus pour les profondeurs supérieures
+testées.
+
+Nous retenons donc une profondeur maximale de 5, qui est la plus petite
+profondeur permettant d'atteindre cette AUC.
+
+# 9. Arbre CART retenu
+
+```{r}
+arbre_final <- rpart(
+  DIFF ~ .,
+  data = train,
+  method = "class",
+  control = rpart.control(
+    maxdepth = 5,
+    cp = 0
+  )
+)
+```
+
+```{r fig.width=11, fig.height=7}
+rpart.plot(
+  arbre_final,
+  type = 2,
+  extra = 104,
+  fallen.leaves = TRUE,
+  roundint = FALSE,
+  box.palette = "RdYlGn",
+  shadow.col = "gray",
+  main = "Arbre CART retenu - Profondeur maximale 5"
+)
+```
+
+# 10. Courbe ROC du modèle retenu
+
+```{r}
+proba_final <- predict(
+  arbre_final,
+  newdata = test,
+  type = "prob"
+)[, "1"]
+
+roc_final <- roc(
+  verification$DIFF,
+  proba_final,
+  quiet = TRUE
+)
+
+auc_final <- as.numeric(
+  auc(roc_final)
+)
+
+auc_final
+```
+
+On transforme les coordonnées de la courbe ROC afin de pouvoir
+l'afficher avec `ggplot2`.
+
+```{r}
+roc_df <- data.frame(
+  FPR = 1 - roc_final$specificities,
+  TPR = roc_final$sensitivities
+)
+```
+
+```{r fig.width=7, fig.height=6}
+ggplot(
+  roc_df,
+  aes(x = FPR, y = TPR)
+) +
+  geom_line(
+    linewidth = 1.2
+  ) +
+  geom_abline(
+    intercept = 0,
+    slope = 1,
+    linetype = "dashed"
+  ) +
+  annotate(
+    "text",
+    x = 0.65,
+    y = 0.20,
+    label = paste0(
+      "AUC = ",
+      round(auc_final, 4)
+    ),
+    size = 5,
+    fontface = "bold"
+  ) +
+  coord_equal(
+    xlim = c(0, 1),
+    ylim = c(0, 1)
+  ) +
+  labs(
+    title = "Courbe ROC - Arbre CART",
+    subtitle = "Évaluation sur les 101 observations de validation",
+    x = "Taux de faux positifs (1 - Spécificité)",
+    y = "Taux de vrais positifs (Sensibilité)"
+  ) +
+  theme_minimal(
+    base_size = 12
+  ) +
+  theme(
+    plot.title = element_text(
+      face = "bold",
+      size = 15
+    ),
+    plot.subtitle = element_text(
+      size = 11
+    ),
+    panel.grid.minor = element_blank()
+  )
+```
+
+L'arbre CART retenu obtient une AUC de validation d'environ
+**0,8063**.
+
+# 11. Modèle final pour Kaggle
+
+Une fois la profondeur choisie, le modèle est réentraîné sur l'ensemble
+des 400 observations étiquetées.
+
+```{r}
+farms_train <- read.csv(
+  "farms_train.csv"
+)
+
+farms_test <- read.csv(
+  "farms_test.csv"
+)
+
+dim(farms_train)
+dim(farms_test)
+
+names(farms_train)
+names(farms_test)
+```
+
+## Préparation des variables
+
+```{r}
+farms_train$DIFF <- as.factor(
+  farms_train$DIFF
+)
+
+farms_train$TOF <- as.factor(
+  farms_train$TOF
+)
+
+farms_test$TOF <- as.factor(
+  farms_test$TOF
+)
+```
+
+## Entraînement de l'arbre final
+
+```{r}
+arbre_kaggle <- rpart(
+  DIFF ~ .,
+  data = farms_train,
+  method = "class",
+  control = rpart.control(
+    maxdepth = 5,
+    cp = 0
+  )
+)
+```
+
+```{r fig.width=11, fig.height=7}
+rpart.plot(
+  arbre_kaggle,
+  type = 2,
+  extra = 104,
+  fallen.leaves = TRUE,
+  roundint = FALSE,
+  box.palette = "RdYlGn",
+  shadow.col = "gray",
+  main = "Arbre CART final - 400 observations"
+)
+```
+
+# 12. Prédictions sur les 120 observations Kaggle
+
+On calcule d'abord les probabilités prédites d'appartenir à la classe
+`DIFF = 1`.
+
+```{r}
+proba_kaggle <- predict(
+  arbre_kaggle,
+  newdata = farms_test,
+  type = "prob"
+)[, "1"]
+
+head(proba_kaggle, 10)
+
+length(proba_kaggle)
+```
+
+Pour obtenir des classes 0 ou 1, on utilise un seuil de 0,5.
+
+```{r}
+classe_kaggle <- ifelse(
+  proba_kaggle >= 0.5,
+  1,
+  0
+)
+
+head(classe_kaggle, 10)
+
+table(classe_kaggle)
+```
+
+# 13. Répartition des prédictions Kaggle
+
+```{r}
+predictions_df <- data.frame(
+  DIFF = factor(classe_kaggle)
+)
+
+ggplot(
+  predictions_df,
+  aes(x = DIFF)
+) +
+  geom_bar(
+    width = 0.6
+  ) +
+  geom_text(
+    stat = "count",
+    aes(label = after_stat(count)),
+    vjust = -0.5,
+    size = 4
+  ) +
+  labs(
+    title = "Répartition des prédictions sur les données Kaggle",
+    subtitle = "52 exploitations prédites en classe 0 et 68 en classe 1",
+    x = "Classe prédite",
+    y = "Nombre d'exploitations"
+  ) +
+  theme_minimal(
+    base_size = 12
+  ) +
+  theme(
+    plot.title = element_text(
+      face = "bold",
+      size = 15
+    ),
+    plot.subtitle = element_text(
+      size = 11
+    ),
+    panel.grid.minor = element_blank()
+  )
+```
+
+# 14. Création du fichier de soumission
+
+```{r}
+ex_soumission <- read.csv(
+  "ex_soumission.csv"
+)
+
+soumission_arbre <- data.frame(
+  ID = ex_soumission$ID,
+  DIFF = classe_kaggle
+)
+
+head(soumission_arbre, 10)
+
+tail(soumission_arbre)
+
+dim(soumission_arbre)
+
+table(soumission_arbre$DIFF)
+```
+
+```{r}
+write.csv(
+  soumission_arbre,
+  "soumission_arbre.csv",
+  row.names = FALSE
+)
+```
+
+# Conclusion
+
+L'analyse exploratoire a permis d'étudier la répartition de la variable
+`DIFF`, les différents types d'exploitation ainsi que les distributions
+des variables quantitatives et des ratios financiers.
+
+Un arbre de classification CART a ensuite été entraîné sur les 299
+observations du jeu d'apprentissage.
+
+Plusieurs profondeurs maximales ont été comparées sur les 101
+observations du jeu de validation. Une profondeur maximale de 5 a été
+retenue, car elle correspond à la plus petite profondeur atteignant
+l'AUC maximale observée, soit environ **0,8063**.
+
+Le modèle a ensuite été réentraîné sur l'ensemble des **400 observations
+étiquetées** disponibles.
+
+Enfin, l'arbre final a été utilisé pour prédire la classe `DIFF` des
+**120 exploitations du jeu de données Kaggle**. Avec un seuil de
+classification fixé à 0,5, le modèle prédit 52 observations dans la
+classe 0 et 68 observations dans la classe 1.
+
+L'évaluation finale de ces prédictions est réalisée par Kaggle puisque
+les vraies valeurs de `DIFF` du jeu `farms_test` ne sont pas connues.
