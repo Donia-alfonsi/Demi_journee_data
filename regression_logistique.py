@@ -102,3 +102,37 @@ print(
          "param_logreg__C", "param_logreg__penalty"]
     ].head(10).to_string(index=False)
 )
+print("\n--- RECHERCHE FINE DE C SANS AGE ---")
+
+X_sans_age = df[["TOF", "R7", "R8", "R17", "R22", "R32"]]
+
+valeurs_C = [
+    0.0001, 0.0003, 0.001, 0.003, 0.005,
+    0.01, 0.02, 0.03, 0.05, 0.1,
+    0.2, 0.3, 0.5, 1, 2, 5, 10
+]
+
+for C in valeurs_C:
+
+    modele_c = Pipeline([
+        ("scaler", StandardScaler()),
+        ("logreg", LogisticRegression(
+            C=C,
+            max_iter=10000,
+            random_state=42
+        ))
+    ])
+
+    scores_c = cross_val_score(
+        modele_c,
+        X_sans_age,
+        y,
+        cv=cv,
+        scoring="roc_auc"
+    )
+
+    print(
+        f"C={C:<7} "
+        f"AUC={scores_c.mean():.6f} "
+        f"std={scores_c.std():.6f}"
+    )
