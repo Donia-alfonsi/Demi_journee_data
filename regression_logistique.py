@@ -1,5 +1,6 @@
 
 
+
 import pandas as pd
 
 from sklearn.model_selection import StratifiedKFold, cross_val_score
@@ -11,7 +12,13 @@ from sklearn.linear_model import LogisticRegression
 # Chargement uniquement des données d'entraînement.
 # Les 101 observations de donnees_test.csv sont réservées au test final.
 df = pd.read_csv("donnees_train.csv", sep=None, engine="python")
-
+# Conversion des nombres utilisant une virgule comme séparateur decimal
+for col in df.columns:
+    if df[col].dtype == "object":
+        df[col] = pd.to_numeric(
+            df[col].str.replace(",", ".", regex=False),
+            errors="raise"
+        )
 X = df.drop(columns=["DIFF"])
 y = df["DIFF"]
 
@@ -50,3 +57,48 @@ scores = cross_val_score(
 print("\nAUC des 5 plis :", scores)
 print("AUC moyenne :", scores.mean())
 print("Écart-type :", scores.std())
+# ---------------------------------------------------------
+# Optimisation de la regularisation
+# Uniquement sur donnees_train.csv
+# ---------------------------------------------------------
+
+from sklearn.model_selection import GridSearchCV
+
+param_grid = [
+    {
+        "logreg__penalty": ["l2"],
+        "logreg__C": [0.001, 0.01, 0.1, 0.3, 0.5, 1, 2, 5, 10, 50, 100],
+        "logreg__solver": ["lbfgs"]
+    },
+    {
+        "logreg__penalty": ["l1"],
+        "logreg__C": [0.001, 0.01, 0.1, 0.3, 0.5, 1, 2, 5, 10, 50, 100],
+        "logreg__solver": ["liblinear"]
+    }
+]
+
+grid = GridSearchCV(
+    estimator=pipeline,
+    param_grid=param_grid,
+    scoring="roc_auc",
+    cv=cv,
+    n_jobs=-1,
+    return_train_score=False
+)
+
+grid.fit(X, y)
+
+print("\n--- OPTIMISATION ---")
+print("Meilleure AUC CV :", grid.best_score_)
+print("Meilleurs paramètres :", grid.best_params_)
+
+results = pd.DataFrame(grid.cv_results_)
+results = results.sort_values("mean_test_score", ascending=False)
+
+print("\nTop 10 configurations :")
+print(
+    results[
+        ["mean_test_score", "std_test_score",
+         "param_logreg__C", "param_logreg__penalty"]
+    ].head(10).to_string(index=False)
+)
