@@ -2,7 +2,7 @@
 # 1. IMPORT DES DONNÉES
 # ============================================================
 
-train <- read.csv2("donnees_train.csv")
+train <- read.csv2("../farms_train.csv")
 
 head(train)
 tail(train)

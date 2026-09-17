@@ -1,8 +1,8 @@
 library(e1071)
 library(pROC)
 
-train <- read.csv2("farms_train.csv")
-test  <- read.csv2("farms_test.csv")
+train <- read.csv2("../donnees_train.csv")
+test  <- read.csv2("../donnees_test.csv")
 #verif <- read.csv2("donnees_verification.csv")
 
 str(train)
