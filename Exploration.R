@@ -3,7 +3,7 @@
 # ============================================================
 
 # Si le fichier est dans ton répertoire de travail :
-farms_train <- read.csv("farms_train.csv",
+farms_train <- read.csv("getwd()",
                         header = TRUE,
                         sep = ",")
 
